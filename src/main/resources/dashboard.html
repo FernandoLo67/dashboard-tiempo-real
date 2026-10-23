@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Dashboard en Tiempo Real</title>
+<style>
+  :root {
+    --fondo: #0f1117; --tarjeta: #181b24; --borde: #262b38;
+    --texto: #e6e8ee; --tenue: #8b93a7; --acento: #4f8cff;
+    --ok: #35c98a; --alerta: #f5a524; --error: #f5455c;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; background: var(--fondo); color: var(--texto);
+         font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+  h1 { font-size: 20px; margin: 0; font-weight: 600; }
+  #estado { font-size: 13px; color: var(--tenue); display: flex; align-items: center; gap: 6px; }
+  .punto { width: 8px; height: 8px; border-radius: 50%; background: var(--error); }
+  .punto.vivo { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+  .rejilla { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+  .tarjeta { background: var(--tarjeta); border: 1px solid var(--borde);
+             border-radius: 10px; padding: 16px; }
+  .etiqueta { font-size: 12px; color: var(--tenue); text-transform: uppercase;
+              letter-spacing: .05em; margin-bottom: 6px; }
+  .valor { font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .unidad { font-size: 14px; color: var(--tenue); margin-left: 4px; }
+  .ancha { grid-column: 1 / -1; }
+  canvas { width: 100%; height: 150px; display: block; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--borde); }
+  th:first-child, td:first-child { text-align: left; color: var(--tenue); }
+  td { font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Dashboard en Tiempo Real</h1>
+  <div id="estado"><span class="punto" id="punto"></span><span id="textoEstado">conectando...</span></div>
+</header>
+
+<div class="rejilla">
+  <div class="tarjeta"><div class="etiqueta">Peticiones / s</div>
+    <div class="valor" id="rps">0</div></div>
+  <div class="tarjeta"><div class="etiqueta">Latencia p95</div>
+    <div class="valor" id="p95">0<span class="unidad">ms</span></div></div>
+  <div class="tarjeta"><div class="etiqueta">Tasa de error</div>
+    <div class="valor" id="error">0<span class="unidad">%</span></div></div>
+  <div class="tarjeta"><div class="etiqueta">Memoria usada</div>
+    <div class="valor" id="memoria">0<span class="unidad">MB</span></div></div>
+
+  <div class="tarjeta ancha"><div class="etiqueta">Latencia (ultimas muestras)</div>
+    <canvas id="grafica"></canvas></div>
+
+  <div class="tarjeta ancha"><div class="etiqueta">Detalle</div>
+    <table>
+      <thead><tr><th>Metrica</th><th>Ultimo</th><th>Promedio</th><th>p50</th><th>p95</th><th>p99</th><th>Max</th></tr></thead>
+      <tbody id="tabla"></tbody>
+    </table></div>
+</div>
+
+<script>
+const punto = document.getElementById('punto');
+const textoEstado = document.getElementById('textoEstado');
+const grafica = document.getElementById('grafica');
+const contexto = grafica.getContext('2d');
+
+function conectar() {
+  const ws = new WebSocket('ws://' + location.hostname + ':{{PUERTO_WS}}/metricas');
+
+  ws.onopen = () => { punto.classList.add('vivo'); textoEstado.textContent = 'conectado'; };
+  ws.onclose = () => {
+    punto.classList.remove('vivo');
+    textoEstado.textContent = 'desconectado, reintentando...';
+    setTimeout(conectar, 2000);
+  };
+  ws.onmessage = evento => pintar(JSON.parse(evento.data));
+}
+
+function pintar(datos) {
+  const medidores = datos.medidores || {};
+  const series = datos.series || {};
+  const latencia = series.latencia_ms || {};
+
+  document.getElementById('rps').textContent = Math.round(medidores.peticiones_por_segundo || 0);
+  document.getElementById('p95').innerHTML = Math.round(latencia.p95 || 0) + '<span class="unidad">ms</span>';
+  document.getElementById('error').innerHTML =
+      (medidores.tasa_de_error_porcentaje || 0).toFixed(1) + '<span class="unidad">%</span>';
+  document.getElementById('memoria').innerHTML =
+      Math.round(medidores.memoria_usada_mb || 0) + '<span class="unidad">MB</span>';
+
+  const filas = Object.entries(series).map(([nombre, s]) =>
+    `<tr><td>${nombre}</td><td>${s.ultimo}</td><td>${s.promedio}</td>` +
+    `<td>${s.p50}</td><td>${s.p95}</td><td>${s.p99}</td><td>${s.maximo}</td></tr>`);
+  document.getElementById('tabla').innerHTML = filas.join('');
+
+  dibujar(latencia.valores || []);
+}
+
+function dibujar(valores) {
+  const ancho = grafica.clientWidth, alto = grafica.clientHeight;
+  grafica.width = ancho; grafica.height = alto;
+  contexto.clearRect(0, 0, ancho, alto);
+  if (valores.length < 2) return;
+
+  const max = Math.max(...valores) * 1.1 || 1;
+  contexto.beginPath();
+  valores.forEach((valor, i) => {
+    const x = i / (valores.length - 1) * ancho;
+    const y = alto - (valor / max) * alto;
+    i === 0 ? contexto.moveTo(x, y) : contexto.lineTo(x, y);
+  });
+  contexto.strokeStyle = '#4f8cff';
+  contexto.lineWidth = 2;
+  contexto.stroke();
+
+  contexto.lineTo(ancho, alto); contexto.lineTo(0, alto); contexto.closePath();
+  const degradado = contexto.createLinearGradient(0, 0, 0, alto);
+  degradado.addColorStop(0, 'rgba(79,140,255,.28)');
+  degradado.addColorStop(1, 'rgba(79,140,255,0)');
+  contexto.fillStyle = degradado;
+  contexto.fill();
+}
+
+conectar();
+</script>
+</body>
+</html>
