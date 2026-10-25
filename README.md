@@ -62,9 +62,20 @@ Las series guardan un maximo fijo de muestras, porque un dashboard que corre dia
 
 > Las metricas de la maquina (memoria, hilos, procesadores) son reales, salidas de la JVM. Las de trafico son simuladas, porque esto es una demo del dashboard y no de una aplicacion concreta; en el codigo estan marcadas como tales.
 
+## Sistema de alertas
+
+`MonitorDeAlertas` evalua reglas configurables contra el estado actual de las metricas. Cada `Alerta` define:
+
+- **Metrica** a vigilar (medidor o contador)
+- **Operador** de comparacion (`>`, `<`, `>=`, `<=`)
+- **Umbral** numerico
+- **Severidad** (`INFO`, `ADVERTENCIA`, `CRITICA`)
+
+Ejemplo: alerta "memoria alta" dispara cuando `memoria_uso_porcentaje > 85` con severidad `CRITICA`. El monitor recorre todas las alertas registradas y devuelve solo las que estan disparadas en ese momento.
+
 ## Pruebas
 
-**51 pruebas.** Ademas del vector del RFC, `ServidorDashboardTest` levanta el servidor en un puerto libre y conecta clientes WebSocket de verdad sobre loopback: verifica el apreton completo, la difusion a varios clientes, que un mensaje del cliente llegue desenmascarado, la respuesta al ping y que una desconexion limpie la lista de conectados.
+**61 pruebas.** Ademas del vector del RFC, `ServidorDashboardTest` levanta el servidor en un puerto libre y conecta clientes WebSocket de verdad sobre loopback: verifica el apreton completo, la difusion a varios clientes, que un mensaje del cliente llegue desenmascarado, la respuesta al ping y que una desconexion limpie la lista de conectados.
 
 ```bash
 mvn test
